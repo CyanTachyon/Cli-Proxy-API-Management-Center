@@ -733,9 +733,9 @@ export function calculateTotalCost(usageData: unknown, modelPrices: Record<strin
 }
 
 /**
- * 从 localStorage 加载模型价格
+ * 从 localStorage 加载模型价格（作为后端 API 不可用时的回退）
  */
-export function loadModelPrices(): Record<string, ModelPrice> {
+export function loadModelPricesLocal(): Record<string, ModelPrice> {
   try {
     if (typeof localStorage === 'undefined') {
       return {};
@@ -778,20 +778,6 @@ export function loadModelPrices(): Record<string, ModelPrice> {
     return normalized;
   } catch {
     return {};
-  }
-}
-
-/**
- * 保存模型价格到 localStorage
- */
-export function saveModelPrices(prices: Record<string, ModelPrice>): void {
-  try {
-    if (typeof localStorage === 'undefined') {
-      return;
-    }
-    localStorage.setItem(MODEL_PRICE_STORAGE_KEY, JSON.stringify(prices));
-  } catch {
-    console.warn('保存模型价格失败');
   }
 }
 

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { USAGE_STATS_STALE_TIME_MS, useNotificationStore, useUsageStatsStore } from '@/stores';
 import { usageApi } from '@/services/api/usage';
 import { downloadBlob } from '@/utils/download';
-import { loadModelPrices, saveModelPrices, type ModelPrice } from '@/utils/usage';
+import { loadModelPricesLocal, type ModelPrice } from '@/utils/usage';
 
 export interface UsagePayload {
   total_requests?: number;
@@ -50,7 +50,18 @@ export function useUsageData(): UseUsageDataReturn {
 
   useEffect(() => {
     void loadUsageStats({ staleTimeMs: USAGE_STATS_STALE_TIME_MS }).catch(() => {});
-    setModelPrices(loadModelPrices());
+    usageApi.getModelPrices()
+      .then((res) => {
+        const remote = res?.['model-prices'];
+        if (remote && Object.keys(remote).length > 0) {
+          setModelPrices(remote as Record<string, ModelPrice>);
+        } else {
+          setModelPrices(loadModelPricesLocal());
+        }
+      })
+      .catch(() => {
+        setModelPrices(loadModelPricesLocal());
+      });
   }, [loadUsageStats]);
 
   const handleExport = async () => {
@@ -131,7 +142,7 @@ export function useUsageData(): UseUsageDataReturn {
 
   const handleSetModelPrices = useCallback((prices: Record<string, ModelPrice>) => {
     setModelPrices(prices);
-    saveModelPrices(prices);
+    usageApi.putModelPrices(prices).catch(() => {});
   }, []);
 
   const usage = usageSnapshot as UsagePayload | null;

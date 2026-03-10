@@ -22,6 +22,10 @@ export interface UsageImportResponse {
   [key: string]: unknown;
 }
 
+export interface ModelPriceMap {
+  [model: string]: { prompt: number; completion: number; cache: number };
+}
+
 export const usageApi = {
   /**
    * 获取使用统计原始数据
@@ -49,5 +53,17 @@ export const usageApi = {
       payload = response?.usage ?? response;
     }
     return computeKeyStats(payload);
-  }
+  },
+
+  getModelPrices: () =>
+    apiClient.get<{ 'model-prices': ModelPriceMap }>('/model-prices'),
+
+  putModelPrices: (prices: ModelPriceMap) =>
+    apiClient.put<{ status: string }>('/model-prices', prices),
+
+  patchModelPrice: (model: string, price: { prompt: number; completion: number; cache: number }) =>
+    apiClient.patch<{ status: string }>('/model-prices', { model, price }),
+
+  deleteModelPrice: (model: string) =>
+    apiClient.delete<{ status: string }>(`/model-prices?model=${encodeURIComponent(model)}`),
 };
