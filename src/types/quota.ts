@@ -281,3 +281,48 @@ export interface KimiQuotaState {
   error?: string;
   errorStatus?: number;
 }
+
+// ── Copilot (GitHub Copilot) ────────────────────────────────
+
+export interface CopilotQuotaDetail {
+  entitlement: number;
+  remaining: number;
+  percent_remaining: number;
+  unlimited: boolean;
+  overage_count?: number;
+  overage_permitted?: boolean;
+  quota_id?: string;
+  quota_remaining?: number;
+}
+
+export interface CopilotQuotaSnapshots {
+  chat: CopilotQuotaDetail;
+  completions: CopilotQuotaDetail;
+  premium_interactions: CopilotQuotaDetail;
+}
+
+export interface CopilotUsageResponse {
+  access_type_sku?: string;
+  copilot_plan?: string;
+  quota_reset_date?: string;
+  quota_snapshots?: CopilotQuotaSnapshots;
+}
+
+export interface CopilotQuotaSnapshot {
+  id: string;
+  label: string;
+  labelKey?: string;
+  remaining: number;
+  entitlement: number;
+  percentRemaining: number;
+  unlimited: boolean;
+}
+
+export interface CopilotQuotaState {
+  status: 'idle' | 'loading' | 'success' | 'error';
+  plan?: string | null;
+  resetDate?: string | null;
+  snapshots: CopilotQuotaSnapshot[];
+  error?: string;
+  errorStatus?: number;
+}

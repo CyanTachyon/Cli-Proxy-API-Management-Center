@@ -12,6 +12,7 @@ import {
   ANTIGRAVITY_CONFIG,
   CLAUDE_CONFIG,
   CODEX_CONFIG,
+  COPILOT_CONFIG,
   GEMINI_CLI_CONFIG,
   KIMI_CONFIG
 } from '@/components/quota';
@@ -97,6 +98,12 @@ export function QuotaPage() {
       />
       <QuotaSection
         config={KIMI_CONFIG}
+        files={files}
+        loading={loading}
+        disabled={disableControls}
+      />
+      <QuotaSection
+        config={COPILOT_CONFIG}
         files={files}
         loading={loading}
         disabled={disableControls}

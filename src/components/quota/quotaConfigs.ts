@@ -25,8 +25,11 @@ import type {
   GeminiCliQuotaState,
   KimiQuotaRow,
   KimiQuotaState,
+  CopilotQuotaState,
+  CopilotQuotaSnapshot,
+  CopilotUsageResponse,
 } from '@/types';
-import { apiCallApi, authFilesApi, getApiCallErrorMessage } from '@/services/api';
+import { apiCallApi, apiClient, authFilesApi, getApiCallErrorMessage } from '@/services/api';
 import {
   ANTIGRAVITY_QUOTA_URLS,
   ANTIGRAVITY_REQUEST_HEADERS,
@@ -67,6 +70,7 @@ import {
   isDisabledAuthFile,
   isGeminiCliFile,
   isKimiFile,
+  isCopilotFile,
   isRuntimeOnlyAuthFile,
 } from '@/utils/quota';
 import { normalizeAuthIndex } from '@/utils/usage';
@@ -75,7 +79,7 @@ import styles from '@/pages/QuotaPage.module.scss';
 
 type QuotaUpdater<T> = T | ((prev: T) => T);
 
-type QuotaType = 'antigravity' | 'claude' | 'codex' | 'gemini-cli' | 'kimi';
+type QuotaType = 'antigravity' | 'claude' | 'codex' | 'copilot' | 'gemini-cli' | 'kimi';
 
 const DEFAULT_ANTIGRAVITY_PROJECT_ID = 'bamboo-precept-lgxtn';
 
@@ -83,11 +87,13 @@ export interface QuotaStore {
   antigravityQuota: Record<string, AntigravityQuotaState>;
   claudeQuota: Record<string, ClaudeQuotaState>;
   codexQuota: Record<string, CodexQuotaState>;
+  copilotQuota: Record<string, CopilotQuotaState>;
   geminiCliQuota: Record<string, GeminiCliQuotaState>;
   kimiQuota: Record<string, KimiQuotaState>;
   setAntigravityQuota: (updater: QuotaUpdater<Record<string, AntigravityQuotaState>>) => void;
   setClaudeQuota: (updater: QuotaUpdater<Record<string, ClaudeQuotaState>>) => void;
   setCodexQuota: (updater: QuotaUpdater<Record<string, CodexQuotaState>>) => void;
+  setCopilotQuota: (updater: QuotaUpdater<Record<string, CopilotQuotaState>>) => void;
   setGeminiCliQuota: (updater: QuotaUpdater<Record<string, GeminiCliQuotaState>>) => void;
   setKimiQuota: (updater: QuotaUpdater<Record<string, KimiQuotaState>>) => void;
   clearQuotaCache: () => void;
@@ -1043,4 +1049,131 @@ export const KIMI_CONFIG: QuotaConfig<KimiQuotaState, KimiQuotaRow[]> = {
   controlClassName: styles.kimiControl,
   gridClassName: styles.kimiGrid,
   renderQuotaItems: renderKimiItems,
+};
+
+const COPILOT_SNAPSHOT_LABELS: Record<string, { key: string; fallback: string }> = {
+  chat: { key: 'copilot_quota.chat', fallback: 'Chat' },
+  completions: { key: 'copilot_quota.completions', fallback: 'Completions' },
+  premium_interactions: { key: 'copilot_quota.premium_interactions', fallback: 'Premium Interactions' },
+};
+
+const fetchCopilotQuota = async (
+  file: AuthFileItem,
+  t: TFunction,
+): Promise<CopilotUsageResponse> => {
+  const rawAuthIndex = file['auth_index'] ?? (file as Record<string, unknown>).authIndex;
+  const authIndex = normalizeAuthIndex(rawAuthIndex);
+  if (!authIndex) throw new Error(t('copilot_quota.missing_auth_index'));
+
+  const response = await apiClient.get<CopilotUsageResponse>(
+    '/v0/management/copilot-quota',
+    { params: { auth_index: authIndex } },
+  );
+  return response;
+};
+
+const buildCopilotSnapshots = (
+  data: CopilotUsageResponse,
+): CopilotQuotaSnapshot[] => {
+  const snapshots = data.quota_snapshots;
+  if (!snapshots) return [];
+
+  return Object.entries(snapshots).map(([id, detail]) => {
+    const labelInfo = COPILOT_SNAPSHOT_LABELS[id] ?? { key: '', fallback: id };
+    return {
+      id,
+      label: labelInfo.fallback,
+      labelKey: labelInfo.key || undefined,
+      remaining: detail.remaining ?? 0,
+      entitlement: detail.entitlement ?? 0,
+      percentRemaining: detail.percent_remaining ?? 0,
+      unlimited: detail.unlimited ?? false,
+    };
+  });
+};
+
+const renderCopilotItems = (
+  quota: CopilotQuotaState,
+  t: TFunction,
+  helpers: QuotaRenderHelpers,
+): ReactNode => {
+  const { styles: styleMap, QuotaProgressBar } = helpers;
+  const { createElement: h } = React;
+  const snapshots = quota.snapshots ?? [];
+
+  if (snapshots.length === 0) {
+    return h('div', { className: styleMap.quotaMessage }, t('copilot_quota.empty_data'));
+  }
+
+  const headerParts: ReactNode[] = [];
+  if (quota.plan) {
+    headerParts.push(
+      h('span', { key: 'plan', className: styleMap.quotaModel }, quota.plan),
+    );
+  }
+  if (quota.resetDate) {
+    headerParts.push(
+      h('span', { key: 'reset', className: styleMap.quotaReset },
+        t('copilot_quota.reset_date', { date: quota.resetDate }),
+      ),
+    );
+  }
+
+  const rows = snapshots.map((snap) => {
+    const percent = snap.unlimited ? 100 : snap.percentRemaining;
+    const percentLabel = snap.unlimited ? '∞' : `${Math.round(percent)}%`;
+    const amountLabel = snap.unlimited
+      ? t('copilot_quota.unlimited')
+      : `${snap.remaining} / ${snap.entitlement}`;
+    const label = snap.labelKey
+      ? t(snap.labelKey, { defaultValue: snap.label })
+      : snap.label;
+
+    return h(
+      'div',
+      { key: snap.id, className: styleMap.quotaRow },
+      h(
+        'div',
+        { className: styleMap.quotaRowHeader },
+        h('span', { className: styleMap.quotaModel }, label),
+        h(
+          'div',
+          { className: styleMap.quotaMeta },
+          h('span', { className: styleMap.quotaPercent }, percentLabel),
+          h('span', { className: styleMap.quotaAmount }, amountLabel),
+        ),
+      ),
+      h(QuotaProgressBar, { percent, highThreshold: 60, mediumThreshold: 20 }),
+    );
+  });
+
+  return h(React.Fragment, null, ...headerParts, ...rows);
+};
+
+export const COPILOT_CONFIG: QuotaConfig<CopilotQuotaState, CopilotUsageResponse> = {
+  type: 'copilot',
+  i18nPrefix: 'copilot_quota',
+  cardIdleMessageKey: 'quota_management.card_idle_hint',
+  filterFn: (file) => isCopilotFile(file) && !isDisabledAuthFile(file),
+  fetchQuota: fetchCopilotQuota,
+  storeSelector: (state) => state.copilotQuota,
+  storeSetter: 'setCopilotQuota',
+  buildLoadingState: () => ({ status: 'loading', snapshots: [] }),
+  buildSuccessState: (data) => ({
+    status: 'success',
+    plan: data.copilot_plan ?? null,
+    resetDate: data.quota_reset_date ?? null,
+    snapshots: buildCopilotSnapshots(data),
+  }),
+  buildErrorState: (message, status) => ({
+    status: 'error',
+    snapshots: [],
+    error: message,
+    errorStatus: status,
+  }),
+  cardClassName: styles.copilotCard,
+  controlsClassName: styles.copilotControls,
+  controlClassName: styles.copilotControl,
+  gridClassName: styles.copilotGrid,
+  renderQuotaItems: renderCopilotItems,
 };
